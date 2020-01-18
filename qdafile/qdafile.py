@@ -1,22 +1,21 @@
-# -*- coding: utf-8 -*-
 # qdafile.py
 
-# Copyright (c) 2007-2019, Christoph Gohlke
+# Copyright (c) 2007-2020, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
-# * Redistributions of source code must retain the above copyright notice,
-#   this list of conditions and the following disclaimer.
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
 #
-# * Redistributions in binary form must reproduce the above copyright notice,
-#   this list of conditions and the following disclaimer in the documentation
-#   and/or other materials provided with the distribution.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
 #
-# * Neither the name of the copyright holder nor the names of its
-#   contributors may be used to endorse or promote products derived from
-#   this software without specific prior written permission.
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -43,19 +42,20 @@ Qdafile is no longer being actively developed.
 :Author:
   `Christoph Gohlke <https://www.lfd.uci.edu/~gohlke/>`_
 
-:License: 3-clause BSD
+:License: BSD 3-Clause
 
-:Version: 2019.1.24
+:Version: 2020.1.1
 
 Requirements
 ------------
-* `CPython 2.7 or 3.5+ <https://www.python.org>`_
-* `Numpy 1.13 <https://www.numpy.org>`_
+* `CPython >= 3.6 <https://www.python.org>`_
+* `Numpy 1.14 <https://www.numpy.org>`_
 
 Revisions
 ---------
-2019.1.24
-    Update copyright year.
+2020.1.1
+    Remove support for Python 2.7 and 3.5.
+    Update copyright.
 
 Examples
 --------
@@ -68,26 +68,31 @@ Examples
 ...     dtypes=['>f8', '>i4', '>f4'],
 ...     ).write('_test.qda')
 >>> qda = QDAfile('_test.qda')
+>>> print(qda)
+QDAfile
+ _test.qda
+ file id: 12
+ columns: 3
+ rows: [2, 3, 2]
+ headers: [b'X', b'Y', b'Z']
+ dtypes: ['>f8', '>i4', '>f4']
 >>> qda.headers[2]
 b'Z'
 >>> qda[2, :qda.rows[2]]
-array([ 6.,  7.])
+array([6., 7.])
 
 """
 
-from __future__ import division, print_function
+__version__ = '2020.1.1'
 
-__version__ = '2019.1.24'
-__docformat__ = 'restructuredtext en'
-__all__ = ('QDAfile',)
+__all__ = ('QDAfile', 'unique_headers')
 
-import sys
 import struct
 
 import numpy
 
 
-class QDAfile(object):
+class QDAfile:
     """Read or write QDA files.
 
     Only numeric data types (float, double, and int) are supported.
@@ -112,9 +117,22 @@ class QDAfile(object):
         Sequence of column data types ('>f4', '>f8', or '>i4').
 
     """
-    _fileid = {b'\x00\x06': 6, b'\x00\x08': 8, b'\x00\x0C': 12}
-    _dtypes = {0: '>f4', 3: '>f8', 4: '>i4', 1: 'S40',
-               '>f4': 0, '>f8': 3, '>i4': 4}
+
+    FID = {
+        b'\x00\x06': 6,
+        b'\x00\x08': 8,
+        b'\x00\x0C': 12,
+    }
+
+    DTYPE = {
+        0: '>f4',
+        3: '>f8',
+        4: '>i4',
+        1: 'S40',
+        '>f4': 0,
+        '>f8': 3,
+        '>i4': 4,
+    }
 
     def __init__(self, arg=None, **kwargs):
         """Initialize instance using file name/descriptor or data array.
@@ -135,7 +153,7 @@ class QDAfile(object):
 
         if arg is None:
             self._fromdata([], **kwargs)
-        elif isinstance(arg, basestring if sys.version[0] == '2' else str):
+        elif isinstance(arg, str):
             with open(arg, 'rb') as fh:
                 self._fromfile(fh)
         elif hasattr(arg, 'seek'):
@@ -161,13 +179,13 @@ class QDAfile(object):
         """
         fid = fh.read(2)
         try:
-            self.fid = self._fileid[fid]
-        except KeyError:
-            raise IOError('not a QDA file or unsupported version')
+            self.fid = QDAfile.FID[fid]
+        except KeyError as exc:
+            raise OSError('not a QDA file or unsupported version') from exc
 
         columns = numpy.fromfile(fh, dtype='>i2', count=1)[0]
         if 1000 < columns < 0:
-            raise IOError('not a QDA file')
+            raise OSError('not a QDA file')
 
         fh.read(512 - 4)
         rows = list(numpy.fromfile(fh, count=columns,
@@ -175,9 +193,10 @@ class QDAfile(object):
 
         dtypes = numpy.fromfile(fh, dtype='>i2', count=columns)
         try:
-            dtypes = [self._dtypes[dt] for dt in dtypes]
-        except KeyError:
-            raise IOError('the file contains data of unsupported type', dtypes)
+            dtypes = [QDAfile.DTYPE[dt] for dt in dtypes]
+        except KeyError as exc:
+            raise OSError(
+                'the file contains data of unsupported type', dtypes) from exc
 
         headers = [s.split(b'\x00', 1)[0] for s in
                    numpy.fromfile(fh, dtype='S40', count=columns)]
@@ -224,8 +243,8 @@ class QDAfile(object):
         if rows:
             try:
                 rows = [int(rows[i]) for i in range(columns)]
-            except (IndexError, TypeError, ValueError):
-                raise ValueError('invalid rows argument')
+            except (IndexError, TypeError, ValueError) as exc:
+                raise ValueError('invalid rows argument') from exc
         else:
             try:
                 rows = [data.shape[1]] * columns
@@ -238,22 +257,24 @@ class QDAfile(object):
         if headers:
             try:
                 headers = [headers[i][0:40] for i in range(columns)]
-            except IndexError:
-                raise ValueError('invalid headers argument')
+            except IndexError as exc:
+                raise ValueError('invalid headers argument') from exc
         else:
             headers = unique_headers(columns)
 
         if dtypes:
             try:
-                [self._dtypes[str(dtypes[i])] for i in range(columns)]
-            except (IndexError, KeyError):
-                raise ValueError('invalid dtypes argument')
+                [QDAfile.DTYPE[str(dtypes[i])] for i in range(columns)]
+            except (IndexError, KeyError) as exc:
+                raise ValueError('invalid dtypes argument') from exc
         else:
             dtypes = ['>f8'] * columns
 
-        if (len(dtypes) != columns
-                or len(headers) != columns
-                or len(rows) != columns):
+        if (
+            len(dtypes) != columns or
+            len(headers) != columns or
+            len(rows) != columns
+        ):
             raise ValueError('invalid argument(s)')
 
         self.fid = 12
@@ -270,36 +291,43 @@ class QDAfile(object):
         fh.write(struct.pack('>h', self.columns))
         fh.write(b'\x00\x0E\x01\x02\x00\x05\x00\x01')
         fh.write(b'\x00' * (512 - 12))
-        func = str if sys.version[0] == '2' else lambda x: bytes(x, 'ascii')
         for r in self.rows:
             fh.write(struct.pack('>i', r))
         for t in self.dtypes:
-            fh.write(struct.pack('>h', self._dtypes[t]))
+            fh.write(struct.pack('>h', QDAfile.DTYPE[t]))
         for h in self.headers:
-            h = func(h)
+            h = h.encode('ascii')
             fh.write(h + b'\x00' * (40 - len(h)))
         for i, (r, t, h) in enumerate(zip(self.rows, self.dtypes,
                                           self.headers)):
             self.data[i, 0:r].astype(t).tofile(fh, format=t)
             fh.write(b'\x00\x01' * r)
             fh.write(b'\x0E\x02\x01\x00\x05\x00\x00\x01')
-            h = func(h)
+            h = h.encode('ascii')
             fh.write(h + b'\x00' * (128 - len(h)))
 
     def __str__(self):
-        return '\n'.join('%14s: %s' % t for t in (
-            ('File Name', self.name),
-            ('File ID', self.fid),
-            ('Columns', self.columns),
-            ('Rows', self.rows),
-            ('Headers', self.headers),
-            ('Data Types', self.dtypes), ))
+        return '\n '.join((
+            self.__class__.__name__,
+            self.name,
+            f'file id: {self.fid}',
+            f'columns: {self.columns}',
+            f'rows: {self.rows}',
+            f'headers: {self.headers}',
+            f'dtypes: {self.dtypes}',
+        ))
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, key):
         return self.data[key]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
 
 
 def unique_headers(number):
@@ -339,8 +367,5 @@ def unique_headers(number):
 
 if __name__ == '__main__':
     import doctest
-    try:
-        numpy.set_printoptions(legacy='1.13')
-    except TypeError:
-        pass
+
     doctest.testmod()
