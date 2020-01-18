@@ -12,19 +12,20 @@ Qdafile is no longer being actively developed.
 :Author:
   `Christoph Gohlke <https://www.lfd.uci.edu/~gohlke/>`_
 
-:License: 3-clause BSD
+:License: BSD 3-Clause
 
-:Version: 2019.1.24
+:Version: 2020.1.1
 
 Requirements
 ------------
-* `CPython 2.7 or 3.5+ <https://www.python.org>`_
-* `Numpy 1.13 <https://www.numpy.org>`_
+* `CPython >= 3.6 <https://www.python.org>`_
+* `Numpy 1.14 <https://www.numpy.org>`_
 
 Revisions
 ---------
-2019.1.24
-    Update copyright year.
+2020.1.1
+    Remove support for Python 2.7 and 3.5.
+    Update copyright.
 
 Examples
 --------
@@ -37,7 +38,15 @@ Examples
 ...     dtypes=['>f8', '>i4', '>f4'],
 ...     ).write('_test.qda')
 >>> qda = QDAfile('_test.qda')
+>>> print(qda)
+QDAfile
+ _test.qda
+ file id: 12
+ columns: 3
+ rows: [2, 3, 2]
+ headers: [b'X', b'Y', b'Z']
+ dtypes: ['>f8', '>i4', '>f4']
 >>> qda.headers[2]
 b'Z'
 >>> qda[2, :qda.rows[2]]
-array([ 6.,  7.])
+array([6., 7.])
