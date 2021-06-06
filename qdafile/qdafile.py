@@ -1,6 +1,6 @@
 # qdafile.py
 
-# Copyright (c) 2007-2020, Christoph Gohlke
+# Copyright (c) 2007-2021, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -44,18 +44,20 @@ Qdafile is no longer being actively developed.
 
 :License: BSD 3-Clause
 
-:Version: 2020.1.1
+:Version: 2021.6.6
 
 Requirements
 ------------
-* `CPython >= 3.6 <https://www.python.org>`_
-* `Numpy 1.14 <https://www.numpy.org>`_
+* `CPython >= 3.7 <https://www.python.org>`_
+* `Numpy 1.15 <https://www.numpy.org>`_
 
 Revisions
 ---------
+2021.6.6
+    Support os.PathLike file names.
+    Remove support for Python 3.6 (NEP 29).
 2020.1.1
     Remove support for Python 2.7 and 3.5.
-    Update copyright.
 
 Examples
 --------
@@ -66,7 +68,7 @@ Examples
 ...     rows=[2, 3, '2'],
 ...     headers=['X', 'Y', 'Z'],
 ...     dtypes=['>f8', '>i4', '>f4'],
-...     ).write('_test.qda')
+... ).write('_test.qda')
 >>> qda = QDAfile('_test.qda')
 >>> print(qda)
 QDAfile
@@ -83,10 +85,11 @@ array([6., 7.])
 
 """
 
-__version__ = '2020.1.1'
+__version__ = '2021.6.6'
 
 __all__ = ('QDAfile', 'unique_headers')
 
+import os
 import struct
 
 import numpy
@@ -118,11 +121,7 @@ class QDAfile:
 
     """
 
-    FID = {
-        b'\x00\x06': 6,
-        b'\x00\x08': 8,
-        b'\x00\x0C': 12,
-    }
+    FID = {b'\x00\x06': 6, b'\x00\x08': 8, b'\x00\x0C': 12}
 
     DTYPE = {
         0: '>f4',
@@ -153,7 +152,7 @@ class QDAfile:
 
         if arg is None:
             self._fromdata([], **kwargs)
-        elif isinstance(arg, str):
+        elif isinstance(arg, (str, os.PathLike)):
             with open(arg, 'rb') as fh:
                 self._fromfile(fh)
         elif hasattr(arg, 'seek'):
@@ -188,22 +187,29 @@ class QDAfile:
             raise OSError('not a QDA file')
 
         fh.read(512 - 4)
-        rows = list(numpy.fromfile(fh, count=columns,
-                                   dtype='>i4' if self.fid == 12 else '>i2'))
+        rows = list(
+            numpy.fromfile(
+                fh, count=columns, dtype='>i4' if self.fid == 12 else '>i2'
+            )
+        )
 
         dtypes = numpy.fromfile(fh, dtype='>i2', count=columns)
         try:
             dtypes = [QDAfile.DTYPE[dt] for dt in dtypes]
         except KeyError as exc:
             raise OSError(
-                'the file contains data of unsupported type', dtypes) from exc
+                'the file contains data of unsupported type', dtypes
+            ) from exc
 
-        headers = [s.split(b'\x00', 1)[0] for s in
-                   numpy.fromfile(fh, dtype='S40', count=columns)]
+        headers = [
+            s.split(b'\x00', 1)[0]
+            for s in numpy.fromfile(fh, dtype='S40', count=columns)
+        ]
 
         # TODO: store to Pandas dataframe
-        data = numpy.empty((columns, max(rows) if rows else 0),
-                           dtype='float64')
+        data = numpy.empty(
+            (columns, max(rows) if rows else 0), dtype='float64'
+        )
         data[:] = numpy.NaN
         for i, (row, dtype) in enumerate(zip(rows, dtypes)):
             try:
@@ -220,8 +226,9 @@ class QDAfile:
         self.rows = rows
         self.headers = headers
 
-    def _fromdata(self, data, name='Untitled.qda', headers=None,
-                  rows=None, dtypes=None):
+    def _fromdata(
+        self, data, name='Untitled.qda', headers=None, rows=None, dtypes=None
+    ):
         """Initialize instance from data array and optional arguments.
 
         Raise ValueError if data is incompatible with file format.
@@ -271,9 +278,9 @@ class QDAfile:
             dtypes = ['>f8'] * columns
 
         if (
-            len(dtypes) != columns or
-            len(headers) != columns or
-            len(rows) != columns
+            len(dtypes) != columns
+            or len(headers) != columns
+            or len(rows) != columns
         ):
             raise ValueError('invalid argument(s)')
 
@@ -298,8 +305,9 @@ class QDAfile:
         for h in self.headers:
             h = h.encode('ascii')
             fh.write(h + b'\x00' * (40 - len(h)))
-        for i, (r, t, h) in enumerate(zip(self.rows, self.dtypes,
-                                          self.headers)):
+        for i, (r, t, h) in enumerate(
+            zip(self.rows, self.dtypes, self.headers)
+        ):
             self.data[i, 0:r].astype(t).tofile(fh, format=t)
             fh.write(b'\x00\x01' * r)
             fh.write(b'\x0E\x02\x01\x00\x05\x00\x00\x01')
@@ -307,15 +315,17 @@ class QDAfile:
             fh.write(h + b'\x00' * (128 - len(h)))
 
     def __str__(self):
-        return '\n '.join((
-            self.__class__.__name__,
-            self.name,
-            f'file id: {self.fid}',
-            f'columns: {self.columns}',
-            f'rows: {self.rows}',
-            f'headers: {self.headers}',
-            f'dtypes: {self.dtypes}',
-        ))
+        return '\n '.join(
+            (
+                self.__class__.__name__,
+                self.name,
+                f'file id: {self.fid}',
+                f'columns: {self.columns}',
+                f'rows: {self.rows}',
+                f'headers: {self.headers}',
+                f'dtypes: {self.dtypes}',
+            )
+        )
 
     def __len__(self):
         return len(self.data)
