@@ -1,6 +1,6 @@
 # qdafile.py
 
-# Copyright (c) 2007-2022, Christoph Gohlke
+# Copyright (c) 2007-2024, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,24 +41,32 @@ Qdafile is no longer being actively developed.
 
 :Author: `Christoph Gohlke <https://www.cgohlke.com>`_
 :License: BSD 3-Clause
-:Version: 2022.9.28
+:Version: 2024.5.24
 
 Requirements
 ------------
 
-This release has been tested with the following requirements and dependencies
+This revision was tested with the following requirements and dependencies
 (other versions may work):
 
-- `CPython 3.8.10, 3.9.13, 3.10.7, 3.11.0rc2 <https://www.python.org>`_
-- `NumPy 1.22.4 <https://pypi.org/project/numpy/>`_
+- `CPython <https://www.python.org>`_ 3.9.13, 3.10.11, 3.11.9, 3.12.3
+- `NumPy <https://pypi.org/project/numpy>`_ 1.26.4
 
 Revisions
 ---------
+
+2024.5.24
+
+- Support NumPy 2.
+- Fix docstring examples not correctly rendered on GitHub.
+- Add py.typed marker.
+- Drop support for Python 3.8 and numpy < 1.22 (NEP29).
 
 2022.9.28
 
 - Return headers as str, not bytes (breaking).
 - Add type hints.
+- Convert to Google style docstrings.
 - Drop support for Python 3.7 and numpy < 1.19 (NEP29).
 
 2021.6.6
@@ -76,7 +84,7 @@ Examples
 >>> from qdafile import QDAfile
 >>> QDAfile().write('_empty.qda')
 >>> QDAfile(
-...     [[1.0, 2.0, 0.], [3.0, 4.0, 5.0], [6.0, 7.0, 0.]],
+...     [[1.0, 2.0, 0.0], [3.0, 4.0, 5.0], [6.0, 7.0, 0.0]],
 ...     rows=[2, 3, '2'],
 ...     headers=['X', 'Y', 'Z'],
 ...     dtypes=['>f8', '>i4', '>f4'],
@@ -91,23 +99,22 @@ Examples
   dtypes: ['>f8', '>i4', '>f4']
 >>> qda.headers[2]
 'Z'
->>> qda[2, :qda.rows[2]]
+>>> qda[2, : qda.rows[2]]
 array([6., 7.])
 
 """
 
 from __future__ import annotations
 
-__version__ = '2022.9.28'
+__version__ = '2024.5.24'
 
 __all__ = ['QDAfile', 'unique_headers']
 
 import os
 import struct
+from typing import TYPE_CHECKING, BinaryIO, Sequence
 
 import numpy
-
-from typing import TYPE_CHECKING, BinaryIO, Sequence
 
 if TYPE_CHECKING:
     try:
@@ -221,12 +228,14 @@ class QDAfile:
         ).tolist()
 
         types = numpy.fromfile(fh, dtype='>i2', count=columns)
-        try:
-            dtypes = [QDAfile.DTYPE_STR[t] for t in types]
-        except KeyError as exc:
-            raise OSError(
-                'the file contains data of unsupported type', dtypes
-            ) from exc
+        dtypes = []
+        for t in types:
+            try:
+                dtypes.append(QDAfile.DTYPE_STR[t])
+            except KeyError as exc:
+                raise ValueError(
+                    f'the file contains data of unsupported type {t}'
+                ) from exc
 
         headers: list[str] = [
             s.split(b'\x00', 1)[0].decode('latin_1')
@@ -237,7 +246,7 @@ class QDAfile:
         data = numpy.empty(
             (columns, max(rows) if rows else 0), dtype='float64'
         )
-        data[:] = numpy.NaN
+        data[:] = numpy.nan
         for i, (row, dtype) in enumerate(zip(rows, dtypes)):
             try:
                 data[i, 0:row] = numpy.fromfile(fh, dtype=dtype, count=row)
