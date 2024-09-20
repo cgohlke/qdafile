@@ -8,7 +8,7 @@ import glob
 from qdafile import QDAfile
 
 
-def test_qdafile():
+def test_qdafile() -> None:
     """More QDAfile class tests."""
     QDAfile().write('tests\\_empty.qda')
     QDAfile(
