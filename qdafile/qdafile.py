@@ -1,6 +1,6 @@
 # qdafile.py
 
-# Copyright (c) 2007-2024, Christoph Gohlke
+# Copyright (c) 2007-2025, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,7 +41,7 @@ Qdafile is no longer being actively developed.
 
 :Author: `Christoph Gohlke <https://www.cgohlke.com>`_
 :License: BSD 3-Clause
-:Version: 2024.5.24
+:Version: 2025.1.1
 
 Requirements
 ------------
@@ -49,11 +49,16 @@ Requirements
 This revision was tested with the following requirements and dependencies
 (other versions may work):
 
-- `CPython <https://www.python.org>`_ 3.9.13, 3.10.11, 3.11.9, 3.12.3
-- `NumPy <https://pypi.org/project/numpy>`_ 1.26.4
+- `CPython <https://www.python.org>`_ 3.10.11, 3.11.9, 3.12.8, 3.13.1 64-bit
+- `NumPy <https://pypi.org/project/numpy/>`_ 2.1.3
 
 Revisions
 ---------
+
+2025.1.1
+
+- Improve type hints.
+- Drop support for Python 3.9, support Python 3.13.
 
 2024.5.24
 
@@ -72,11 +77,11 @@ Revisions
 2021.6.6
 
 - Support os.PathLike file names.
-- Remove support for Python 3.6 (NEP 29).
+- Drop support for Python 3.6 (NEP 29).
 
 2020.1.1
 
-- Remove support for Python 2.7 and 3.5.
+- Drop support for Python 2.7 and 3.5.
 
 Examples
 --------
@@ -106,22 +111,21 @@ array([6., 7.])
 
 from __future__ import annotations
 
-__version__ = '2024.5.24'
+__version__ = '2025.1.1'
 
-__all__ = ['QDAfile', 'unique_headers']
+__all__ = ['__version__', 'QDAfile', 'unique_headers']
 
 import os
 import struct
-from typing import TYPE_CHECKING, BinaryIO, Sequence
+from typing import TYPE_CHECKING, BinaryIO
 
 import numpy
 
 if TYPE_CHECKING:
-    try:
-        from numpy.typing import ArrayLike
-    except ImportError:
-        # numpy < 1.20
-        from numpy import ndarray as ArrayLike
+    from collections.abc import Sequence
+    from typing import IO, Any
+
+    from numpy.typing import ArrayLike, NDArray
 
 
 class QDAfile:
@@ -163,21 +167,30 @@ class QDAfile:
 
     fid: int
     """File identification."""
+
     name: str
     """File name."""
-    data: numpy.ndarray
+
+    data: NDArray[Any]
     """Data in columns and rows."""
+
     columns: int
     """Number of columns."""
+
     rows: list[int]
     """Number of rows in each column."""
+
     headers: list[str]
     """Column headers."""
+
     dtypes: list[str]
     """Column data types ('>f4', '>f8', or '>i4')."""
 
     def __init__(
-        self, arg: str | os.PathLike | BinaryIO | None = None, /, **kwargs
+        self,
+        arg: str | os.PathLike[Any] | IO[bytes] | ArrayLike | None = None,
+        /,
+        **kwargs: Any,
     ) -> None:
         self.fid = 12
         self.name = 'Untitled'
@@ -188,25 +201,25 @@ class QDAfile:
             with open(arg, 'rb') as fh:
                 self._fromfile(fh)
         elif isinstance(arg, BinaryIO) or hasattr(arg, 'seek'):
-            self._fromfile(arg)
+            self._fromfile(arg)  # type: ignore[arg-type]
         else:
             self._fromdata(arg, **kwargs)
 
     def write(
         self,
-        arg: str | os.PathLike | BinaryIO | None = None,
+        arg: str | os.PathLike[Any] | IO[bytes] | None = None,
         /,
     ) -> None:
         """Save data to QDA file."""
         if arg is None:
             arg = self.name
         if isinstance(arg, BinaryIO) or hasattr(arg, 'seek'):
-            self._tofile(arg)  # type: ignore
+            self._tofile(arg)  # type: ignore[arg-type]
         else:
             with open(arg, 'wb') as fh:
                 self._tofile(fh)
 
-    def _fromfile(self, fh: BinaryIO, /) -> None:
+    def _fromfile(self, fh: IO[bytes], /) -> None:
         """Initialize instance from open file object.
 
         Raise IOError if file can not be read.
@@ -276,7 +289,7 @@ class QDAfile:
         Raise ValueError if data is incompatible with file format.
 
         """
-        data = numpy.array(arg, dtype='>f8')
+        data = numpy.asarray(arg, dtype='>f8')
         data = numpy.atleast_2d(data)
         if data.ndim > 2:
             raise ValueError('data array must be 2 dimensional or less')
@@ -335,7 +348,7 @@ class QDAfile:
         self.headers = headers
         self.dtypes = dtypes
 
-    def _tofile(self, fh: BinaryIO, /) -> None:
+    def _tofile(self, fh: IO[bytes], /) -> None:
         """Write data to an open file."""
         fh.write(b'\x00\x0C')
         fh.write(struct.pack('>h', self.columns))
@@ -360,13 +373,13 @@ class QDAfile:
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, key) -> numpy.ndarray:
-        return self.data[key]
+    def __getitem__(self, key: Any) -> NDArray[Any]:
+        return self.data[key]  # type: ignore[no-any-return]
 
-    def __enter__(self):
+    def __enter__(self) -> QDAfile:
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         pass
 
     def __repr__(self) -> str:
@@ -417,7 +430,7 @@ def unique_headers(number: int, /) -> list[str]:
     raise NotImplementedError()
 
 
-def indent(*args) -> str:
+def indent(*args: Any) -> str:
     """Return joined string representations of objects with indented lines."""
     text = '\n'.join(str(arg) for arg in args)
     return '\n'.join(
