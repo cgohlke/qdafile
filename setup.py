@@ -8,15 +8,16 @@ import sys
 from setuptools import setup
 
 
-def search(pattern, string, flags=0):
+def search(pattern: str, string: str, flags: int = 0) -> str:
     """Return first match of pattern in string."""
     match = re.search(pattern, string, flags)
     if match is None:
-        raise ValueError(f'{pattern!r} not found')
+        msg = f'{pattern=!r} not found'
+        raise ValueError(msg)
     return match.groups()[0]
 
 
-def fix_docstring_examples(docstring):
+def fix_docstring_examples(docstring: str) -> str:
     """Return docstring with examples fixed for GitHub."""
     start = True
     indent = False
@@ -37,7 +38,7 @@ def fix_docstring_examples(docstring):
 with open('qdafile/qdafile.py', encoding='utf-8') as fh:
     code = fh.read()
 
-version = search(r"__version__ = '(.*?)'", code).replace('.x.x', '.dev')
+version = search(r"__version__ = '(.*?)'", code).replace('.x.x', '.dev0')
 
 description = search(r'"""(.*)\.(?:\r\n|\r|\n)', code)
 
@@ -47,7 +48,7 @@ readme = search(
     re.MULTILINE | re.DOTALL,
 )
 readme = '\n'.join(
-    [description, '=' * len(description)] + readme.splitlines()[1:]
+    [description, '=' * len(description), *readme.splitlines()[1:]]
 )
 
 if 'sdist' in sys.argv:
@@ -64,14 +65,27 @@ if 'sdist' in sys.argv:
     license = license.replace('# ', '').replace('#', '')
 
     with open('LICENSE', 'w', encoding='utf-8') as fh:
-        fh.write('BSD 3-Clause License\n\n')
+        fh.write('BSD-3-Clause license\n\n')
         fh.write(license)
 
+    revisions = search(
+        r'(?:\r\n|\r|\n){2}(Revisions.*)- …',
+        readme,
+        re.MULTILINE | re.DOTALL,
+    ).strip()
+
+    with open('CHANGES.rst', encoding='utf-8') as fh:
+        old = fh.read()
+
+    old = old.split(revisions.splitlines()[-1])[-1]
+    with open('CHANGES.rst', 'w', encoding='utf-8') as fh:
+        fh.write(revisions.strip())
+        fh.write(old)
 
 setup(
     name='qdafile',
     version=version,
-    license='BSD',
+    license='BSD-3-Clause',
     description=description,
     long_description=readme,
     long_description_content_type='text/x-rst',
@@ -84,19 +98,18 @@ setup(
         # 'Documentation': 'https://',
     },
     packages=['qdafile'],
-    python_requires='>=3.10',
+    python_requires='>=3.11',
     install_requires=['numpy'],
     platforms=['any'],
     classifiers=[
-        'Development Status :: 7 - Inactive',
-        'License :: OSI Approved :: BSD License',
+        'Development Status :: 4 - Beta',
         'Intended Audience :: Science/Research',
         'Intended Audience :: Developers',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
     ],
 )
