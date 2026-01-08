@@ -1,6 +1,6 @@
 # qdafile.py
 
-# Copyright (c) 2007-2025, Christoph Gohlke
+# Copyright (c) 2007-2026, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,8 +40,8 @@ KaleidaGraph is a registered trademark of `Abelbeck Software
 Qdafile is no longer being actively developed.
 
 :Author: `Christoph Gohlke <https://www.cgohlke.com>`_
-:License: BSD 3-Clause
-:Version: 2025.1.1
+:License: BSD-3-Clause
+:Version: 2026.1.8
 
 Requirements
 ------------
@@ -49,11 +49,16 @@ Requirements
 This revision was tested with the following requirements and dependencies
 (other versions may work):
 
-- `CPython <https://www.python.org>`_ 3.10.11, 3.11.9, 3.12.8, 3.13.1 64-bit
-- `NumPy <https://pypi.org/project/numpy/>`_ 2.1.3
+- `CPython <https://www.python.org>`_ 3.11.9, 3.12.10, 3.13.11, 3.14.2 64-bit
+- `NumPy <https://pypi.org/project/numpy/>`_ 2.4.0
 
 Revisions
 ---------
+
+2026.1.8
+
+- Improve code quality and typing.
+- Drop support for Python 3.10, support Python 3.14.
 
 2025.1.1
 
@@ -62,26 +67,9 @@ Revisions
 
 2024.5.24
 
-- Support NumPy 2.
-- Fix docstring examples not correctly rendered on GitHub.
-- Add py.typed marker.
-- Drop support for Python 3.8 and numpy < 1.22 (NEP29).
+- …
 
-2022.9.28
-
-- Return headers as str, not bytes (breaking).
-- Add type hints.
-- Convert to Google style docstrings.
-- Drop support for Python 3.7 and numpy < 1.19 (NEP29).
-
-2021.6.6
-
-- Support os.PathLike file names.
-- Drop support for Python 3.6 (NEP 29).
-
-2020.1.1
-
-- Drop support for Python 2.7 and 3.5.
+Refer to the CHANGES file for older revisions.
 
 Examples
 --------
@@ -111,19 +99,21 @@ array([6., 7.])
 
 from __future__ import annotations
 
-__version__ = '2025.1.1'
+__version__ = '2026.1.8'
 
-__all__ = ['__version__', 'QDAfile', 'unique_headers']
+__all__ = ['QDAfile', '__version__', 'unique_headers']
 
+import contextlib
 import os
 import struct
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING, BinaryIO, Self
 
 import numpy
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from typing import IO, Any
+    from types import TracebackType
+    from typing import IO, Any, ClassVar
 
     from numpy.typing import ArrayLike, NDArray
 
@@ -150,16 +140,20 @@ class QDAfile:
 
     """
 
-    FID = {b'\x00\x06': 6, b'\x00\x08': 8, b'\x00\x0C': 12}
+    FID: ClassVar[dict[bytes, int]] = {
+        b'\x00\x06': 6,
+        b'\x00\x08': 8,
+        b'\x00\x0c': 12,
+    }
 
-    DTYPE_STR = {
+    DTYPE_STR: ClassVar[dict[int, str]] = {
         0: '>f4',
         3: '>f8',
         4: '>i4',
         1: 'S40',
     }
 
-    DTYPE_INT = {
+    DTYPE_INT: ClassVar[dict[str, int]] = {
         '>f4': 0,
         '>f8': 3,
         '>i4': 4,
@@ -229,11 +223,13 @@ class QDAfile:
         try:
             self.fid = QDAfile.FID[fid]
         except KeyError as exc:
-            raise OSError('not a QDA file or unsupported version') from exc
+            msg = 'not a QDA file or unsupported version'
+            raise OSError(msg) from exc
 
         columns = int(numpy.fromfile(fh, dtype='>i2', count=1)[0])
-        if 1000 < columns < 0:
-            raise OSError('not a QDA file')
+        if columns < 0 or columns > 1000:
+            msg = 'not a QDA file'
+            raise OSError(msg)
 
         fh.read(512 - 4)
         rows: list[int] = numpy.fromfile(
@@ -246,9 +242,8 @@ class QDAfile:
             try:
                 dtypes.append(QDAfile.DTYPE_STR[t])
             except KeyError as exc:
-                raise ValueError(
-                    f'the file contains data of unsupported type {t}'
-                ) from exc
+                msg = f'the file contains data of unsupported type {t}'
+                raise ValueError(msg) from exc
 
         headers: list[str] = [
             s.split(b'\x00', 1)[0].decode('latin_1')
@@ -260,12 +255,10 @@ class QDAfile:
             (columns, max(rows) if rows else 0), dtype='float64'
         )
         data[:] = numpy.nan
-        for i, (row, dtype) in enumerate(zip(rows, dtypes)):
-            try:
+        for i, (row, dtype) in enumerate(zip(rows, dtypes, strict=False)):
+            with contextlib.suppress(Exception):
+                # can not store 'S40' data
                 data[i, 0:row] = numpy.fromfile(fh, dtype=dtype, count=row)
-            except Exception:
-                # can not store 'S40'
-                pass
             fh.read(136 + 2 * row)
 
         self.name = fh.name
@@ -292,7 +285,8 @@ class QDAfile:
         data = numpy.asarray(arg, dtype='>f8')
         data = numpy.atleast_2d(data)
         if data.ndim > 2:
-            raise ValueError('data array must be 2 dimensional or less')
+            msg = 'data array must be 2 dimensional or less'
+            raise ValueError(msg)
 
         try:
             columns = data.shape[0]
@@ -300,27 +294,31 @@ class QDAfile:
             columns = 0
         else:
             if columns > 1000:
-                raise ValueError('dimensions of data array are too large')
+                msg = 'dimensions of data array are too large'
+                raise ValueError(msg)
 
         if rows:
             try:
                 rows = [int(rows[i]) for i in range(columns)]
             except (IndexError, TypeError, ValueError) as exc:
-                raise ValueError('invalid rows argument') from exc
+                msg = 'invalid rows argument'
+                raise ValueError(msg) from exc
         else:
             try:
                 rows = [data.shape[1]] * columns
             except IndexError:
-                rows = [0]
+                rows = [0] * columns
 
         if max(rows) > 32768:
-            raise ValueError('data array dimensions are too large')
+            msg = 'data array dimensions are too large'
+            raise ValueError(msg)
 
         if headers:
             try:
                 headers = [headers[i][0:40] for i in range(columns)]
             except IndexError as exc:
-                raise ValueError('invalid headers argument') from exc
+                msg = 'invalid headers argument'
+                raise ValueError(msg) from exc
         else:
             headers = unique_headers(columns)
 
@@ -328,7 +326,8 @@ class QDAfile:
             try:
                 [QDAfile.DTYPE_INT[dtypes[i]] for i in range(columns)]
             except (IndexError, KeyError) as exc:
-                raise ValueError('invalid dtypes argument') from exc
+                msg = 'invalid dtypes argument'
+                raise ValueError(msg) from exc
             dtypes = list(dtypes)
         else:
             dtypes = ['>f8'] * columns
@@ -338,7 +337,8 @@ class QDAfile:
             or len(headers) != columns
             or len(rows) != columns
         ):
-            raise ValueError('invalid argument(s)')
+            msg = 'invalid argument(s)'
+            raise ValueError(msg)
 
         self.fid = 12
         self.name = name
@@ -350,9 +350,9 @@ class QDAfile:
 
     def _tofile(self, fh: IO[bytes], /) -> None:
         """Write data to an open file."""
-        fh.write(b'\x00\x0C')
+        fh.write(b'\x00\x0c')
         fh.write(struct.pack('>h', self.columns))
-        fh.write(b'\x00\x0E\x01\x02\x00\x05\x00\x01')
+        fh.write(b'\x00\x0e\x01\x02\x00\x05\x00\x01')
         fh.write(b'\x00' * (512 - 12))
         for r in self.rows:
             fh.write(struct.pack('>i', r))
@@ -362,11 +362,11 @@ class QDAfile:
             b = h.encode('latin_1')
             fh.write(b + b'\x00' * (40 - len(b)))
         for i, (r, t, h) in enumerate(
-            zip(self.rows, self.dtypes, self.headers)
+            zip(self.rows, self.dtypes, self.headers, strict=False)
         ):
             self.data[i, 0:r].astype(t).tofile(fh, format=t)
             fh.write(b'\x00\x01' * r)
-            fh.write(b'\x0E\x02\x01\x00\x05\x00\x00\x01')
+            fh.write(b'\x0e\x02\x01\x00\x05\x00\x00\x01')
             b = h.encode('latin_1')
             fh.write(b + b'\x00' * (128 - len(b)))
 
@@ -376,10 +376,15 @@ class QDAfile:
     def __getitem__(self, key: Any) -> NDArray[Any]:
         return self.data[key]  # type: ignore[no-any-return]
 
-    def __enter__(self) -> QDAfile:
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
     def __repr__(self) -> str:
@@ -427,7 +432,7 @@ def unique_headers(number: int, /) -> list[str]:
                 else:
                     return headers
                 number -= 1
-    raise NotImplementedError()
+    raise NotImplementedError
 
 
 def indent(*args: Any) -> str:
@@ -436,9 +441,3 @@ def indent(*args: Any) -> str:
     return '\n'.join(
         ('  ' + line if line else line) for line in text.splitlines() if line
     )[2:]
-
-
-if __name__ == '__main__':
-    import doctest
-
-    doctest.testmod()
